@@ -12,13 +12,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!process.env.FAL_KEY) {
-      return NextResponse.json(
-        { error: "FAL_KEY environment variable is not set." },
-        { status: 500 }
-      );
-    }
-
     fal.config({ credentials: process.env.FAL_KEY });
 
     // Use fal.ai face swap model

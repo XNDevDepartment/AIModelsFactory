@@ -1,10 +1,20 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { Upload, Sparkles, ArrowRight, RotateCcw, Download, Zap, Camera, User } from "lucide-react";
+import {
+  Upload, Sparkles, ArrowRight, RotateCcw, Download,
+  Zap, Camera, User, Film, Play,
+} from "lucide-react";
 import Image from "next/image";
 
-type Step = "upload" | "select-model" | "processing" | "result";
+type Step =
+  | "upload"
+  | "select-model"
+  | "processing"
+  | "result"
+  | "motion-control"
+  | "motion-processing"
+  | "video-result";
 
 interface GeminiAnalysis {
   description: string;
@@ -43,31 +53,44 @@ const MODEL_PRESETS = [
   },
 ];
 
+const STEPS = [
+  { key: "upload", label: "Upload", icon: Camera },
+  { key: "select-model", label: "Style", icon: User },
+  { key: "processing", label: "Processing", icon: Zap },
+  { key: "result", label: "Photo", icon: Sparkles },
+  { key: "motion-control", label: "Motion", icon: Film },
+  { key: "motion-processing", label: "Rendering", icon: Zap },
+  { key: "video-result", label: "Video", icon: Play },
+];
+
 export default function FaceSwapPage() {
   const [step, setStep] = useState<Step>("upload");
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
-  const [userPhotoFile, setUserPhotoFile] = useState<File | null>(null);
   const [selectedModel, setSelectedModel] = useState<(typeof MODEL_PRESETS)[0] | null>(null);
   const [customModelImage, setCustomModelImage] = useState<string | null>(null);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiAnalysis | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Motion control
+  const [motionVideoFile, setMotionVideoFile] = useState<File | null>(null);
+  const [motionVideoPreview, setMotionVideoPreview] = useState<string | null>(null);
+  const [motionPrompt, setMotionPrompt] = useState("");
+  const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
+  const [isVideoDragging, setIsVideoDragging] = useState(false);
+  const [motionProgress, setMotionProgress] = useState(0);
+
   const userPhotoInputRef = useRef<HTMLInputElement>(null);
   const customModelInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Photo upload ─────────────────────────────────────────────
   const handleUserPhotoUpload = useCallback((file: File) => {
-    if (!file.type.startsWith("image/")) {
-      setError("Please upload a valid image file.");
-      return;
-    }
     const reader = new FileReader();
     reader.onload = (e) => {
       setUserPhoto(e.target?.result as string);
-      setUserPhotoFile(file);
       setError(null);
       setStep("select-model");
     };
@@ -85,10 +108,6 @@ export default function FaceSwapPage() {
   );
 
   const handleCustomModelUpload = useCallback((file: File) => {
-    if (!file.type.startsWith("image/")) {
-      setError("Please upload a valid image file.");
-      return;
-    }
     const reader = new FileReader();
     reader.onload = (e) => {
       setCustomModelImage(e.target?.result as string);
@@ -98,6 +117,7 @@ export default function FaceSwapPage() {
     reader.readAsDataURL(file);
   }, []);
 
+  // ── Face swap ────────────────────────────────────────────────
   const runFaceSwap = async () => {
     if (!userPhoto) return;
     const targetImage = customModelImage || selectedModel?.image;
@@ -107,7 +127,6 @@ export default function FaceSwapPage() {
     }
 
     setStep("processing");
-    setIsProcessing(true);
     setProgress(0);
     setError(null);
 
@@ -151,21 +170,82 @@ export default function FaceSwapPage() {
       clearInterval(progressInterval);
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setStep("select-model");
-    } finally {
-      setIsProcessing(false);
     }
   };
 
+  // ── Motion control ───────────────────────────────────────────
+  const handleVideoUpload = useCallback((file: File) => {
+    setMotionVideoFile(file);
+    setMotionVideoPreview(URL.createObjectURL(file));
+    setError(null);
+  }, []);
+
+  const handleVideoDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsVideoDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleVideoUpload(file);
+    },
+    [handleVideoUpload]
+  );
+
+  const runMotionControl = async () => {
+    if (!resultImage || !motionVideoFile) return;
+
+    setStep("motion-processing");
+    setMotionProgress(0);
+    setError(null);
+
+    const progressInterval = setInterval(() => {
+      setMotionProgress((prev) => Math.min(prev + Math.random() * 6, 88));
+    }, 1200);
+
+    try {
+      const formData = new FormData();
+      formData.append("video", motionVideoFile);
+      formData.append("imageUrl", resultImage);
+      if (motionPrompt.trim()) formData.append("prompt", motionPrompt.trim());
+
+      const res = await fetch("/api/motion-control", {
+        method: "POST",
+        body: formData,
+      });
+
+      clearInterval(progressInterval);
+      setMotionProgress(95);
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Motion control failed.");
+      }
+
+      const data = await res.json();
+      setResultVideoUrl(data.videoUrl);
+      setMotionProgress(100);
+      setStep("video-result");
+    } catch (err: unknown) {
+      clearInterval(progressInterval);
+      setError(err instanceof Error ? err.message : "Video generation failed. Please try again.");
+      setStep("motion-control");
+    }
+  };
+
+  // ── Reset ────────────────────────────────────────────────────
   const reset = () => {
     setStep("upload");
     setUserPhoto(null);
-    setUserPhotoFile(null);
     setSelectedModel(null);
     setCustomModelImage(null);
     setResultImage(null);
     setGeminiAnalysis(null);
     setProgress(0);
     setError(null);
+    setMotionVideoFile(null);
+    setMotionVideoPreview(null);
+    setMotionPrompt("");
+    setResultVideoUrl(null);
+    setMotionProgress(0);
   };
 
   const downloadResult = () => {
@@ -176,9 +256,15 @@ export default function FaceSwapPage() {
     a.click();
   };
 
-  // suppress unused variable warning
-  void isProcessing;
-  void userPhotoFile;
+  const downloadVideo = () => {
+    if (!resultVideoUrl) return;
+    const a = document.createElement("a");
+    a.href = resultVideoUrl;
+    a.download = "ai-model-video.mp4";
+    a.click();
+  };
+
+  const currentStepIdx = STEPS.findIndex((s) => s.key === step);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white">
@@ -198,47 +284,44 @@ export default function FaceSwapPage() {
             <Zap className="w-3.5 h-3.5 text-violet-400" />
             <span>Google Gemini</span>
             <span className="text-white/20">·</span>
-            <span>Fal.ai Face Swap</span>
+            <span>Fal.ai</span>
+            <span className="text-white/20">·</span>
+            <span>Kling v2.6</span>
           </div>
         </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-12">
         {/* Step Indicator */}
-        <div className="flex items-center justify-center gap-3 mb-12">
-          {[
-            { key: "upload", label: "Upload Photo", icon: Camera },
-            { key: "select-model", label: "Choose Style", icon: User },
-            { key: "processing", label: "Processing", icon: Zap },
-            { key: "result", label: "Your Model", icon: Sparkles },
-          ].map((s, i, arr) => {
+        <div className="flex items-center justify-center gap-2 mb-12 flex-wrap">
+          {STEPS.map((s, i) => {
             const isActive = s.key === step;
-            const isDone = arr.findIndex((a) => a.key === step) > i;
+            const isDone = currentStepIdx > i;
             const Icon = s.icon;
             return (
-              <div key={s.key} className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
+              <div key={s.key} className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${
+                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${
                       isDone
                         ? "bg-violet-500 text-white"
                         : isActive
                         ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/40 scale-110"
-                        : "bg-white/10 text-white/30"
+                        : "bg-white/10 text-white/20"
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className="w-3.5 h-3.5" />
                   </div>
                   <span
-                    className={`text-sm font-medium hidden sm:block transition-colors ${
-                      isActive ? "text-white" : isDone ? "text-violet-400" : "text-white/30"
+                    className={`text-xs font-medium hidden sm:block transition-colors ${
+                      isActive ? "text-white" : isDone ? "text-violet-400" : "text-white/25"
                     }`}
                   >
                     {s.label}
                   </span>
                 </div>
-                {i < arr.length - 1 && (
-                  <ArrowRight className="w-4 h-4 text-white/20 flex-shrink-0" />
+                {i < STEPS.length - 1 && (
+                  <ArrowRight className="w-3 h-3 text-white/15 flex-shrink-0" />
                 )}
               </div>
             );
@@ -252,7 +335,7 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* STEP 1: Upload */}
+        {/* ── STEP 1: Upload ── */}
         {step === "upload" && (
           <div className="max-w-xl mx-auto">
             <div className="text-center mb-10">
@@ -260,7 +343,7 @@ export default function FaceSwapPage() {
                 Become an AI Model
               </h2>
               <p className="text-white/50 text-sm">
-                Upload your photo and we&apos;ll place your face into professional model shots — powered by Google Gemini and Fal.ai.
+                Upload your photo and we&apos;ll place your face into professional model shots — then bring them to life with motion.
               </p>
             </div>
             <div
@@ -292,15 +375,13 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* STEP 2: Select Model */}
+        {/* ── STEP 2: Select Model ── */}
         {step === "select-model" && (
           <div className="grid lg:grid-cols-2 gap-10">
             <div>
               <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Your Photo</h3>
               <div className="relative rounded-2xl overflow-hidden bg-white/5 border border-white/10 aspect-[3/4]">
-                {userPhoto && (
-                  <Image src={userPhoto} alt="Your photo" fill className="object-cover" />
-                )}
+                {userPhoto && <Image src={userPhoto} alt="Your photo" fill className="object-cover" />}
                 <button
                   onClick={() => { setStep("upload"); setUserPhoto(null); }}
                   className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white/70 hover:text-white rounded-lg p-2 transition-colors"
@@ -317,7 +398,7 @@ export default function FaceSwapPage() {
                   <button
                     key={model.id}
                     onClick={() => { setSelectedModel(model); setCustomModelImage(null); }}
-                    className={`relative rounded-xl overflow-hidden aspect-[3/4] border-2 transition-all duration-200 group ${
+                    className={`relative rounded-xl overflow-hidden aspect-[3/4] border-2 transition-all duration-200 ${
                       selectedModel?.id === model.id
                         ? "border-violet-400 shadow-lg shadow-violet-500/30 scale-[1.02]"
                         : "border-white/10 hover:border-white/30"
@@ -388,7 +469,7 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* STEP 3: Processing */}
+        {/* ── STEP 3: Processing (face swap) ── */}
         {step === "processing" && (
           <div className="max-w-md mx-auto text-center">
             <div className="mb-10">
@@ -405,7 +486,6 @@ export default function FaceSwapPage() {
               <h2 className="text-2xl font-bold mb-2">Creating Your Model Photo</h2>
               <p className="text-white/40 text-sm">Fal.ai is swapping faces · Gemini is analyzing your shot</p>
             </div>
-
             <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
               <div className="flex justify-between text-xs text-white/50 mb-2">
                 <span>Processing…</span>
@@ -424,10 +504,7 @@ export default function FaceSwapPage() {
                   { label: "Swapping face (Fal.ai)", done: progress > 65 },
                   { label: "Gemini analysis", done: progress > 85 },
                 ].map((item) => (
-                  <div
-                    key={item.label}
-                    className={`flex items-center gap-2 transition-colors ${item.done ? "text-violet-300" : "text-white/30"}`}
-                  >
+                  <div key={item.label} className={`flex items-center gap-2 transition-colors ${item.done ? "text-violet-300" : "text-white/30"}`}>
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.done ? "bg-violet-400" : "bg-white/20"}`} />
                     {item.label}
                   </div>
@@ -437,7 +514,7 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* STEP 4: Result */}
+        {/* ── STEP 4: Result ── */}
         {step === "result" && resultImage && (
           <div className="grid lg:grid-cols-5 gap-10">
             <div className="lg:col-span-3">
@@ -455,7 +532,7 @@ export default function FaceSwapPage() {
                   </button>
                   <button
                     onClick={reset}
-                    className="flex-1 py-2.5 rounded-xl bg-violet-600/80 backdrop-blur-sm hover:bg-violet-500 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    className="flex-1 py-2.5 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                   >
                     <RotateCcw className="w-4 h-4" />
                     Start Over
@@ -476,7 +553,6 @@ export default function FaceSwapPage() {
                     </div>
                     <p className="text-sm text-white/70 leading-relaxed">{geminiAnalysis.description}</p>
                   </div>
-
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-3">
                       <Sparkles className="w-4 h-4 text-fuchsia-400" />
@@ -484,7 +560,6 @@ export default function FaceSwapPage() {
                     </div>
                     <p className="text-sm text-white/70 leading-relaxed">{geminiAnalysis.modelStyle}</p>
                   </div>
-
                   {geminiAnalysis.suggestions.length > 0 && (
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
                       <div className="flex items-center gap-2 mb-3">
@@ -504,13 +579,12 @@ export default function FaceSwapPage() {
                 </>
               ) : (
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0">
-                    <Zap className="w-4 h-4 text-violet-400" />
-                  </div>
-                  <p className="text-sm text-white/40">Gemini analysis unavailable — check your API key.</p>
+                  <Zap className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                  <p className="text-sm text-white/40">Gemini analysis unavailable.</p>
                 </div>
               )}
 
+              {/* Before / After */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-xs text-white/30 mb-2 text-center">Before</p>
@@ -524,6 +598,245 @@ export default function FaceSwapPage() {
                     <Image src={resultImage} alt="After" fill className="object-cover" />
                   </div>
                 </div>
+              </div>
+
+              {/* Motion Control CTA */}
+              <button
+                onClick={() => setStep("motion-control")}
+                className="w-full py-4 rounded-xl font-bold text-sm bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 transition-all duration-200 shadow-lg shadow-fuchsia-500/30 flex items-center justify-center gap-2"
+              >
+                <Film className="w-4 h-4" />
+                Animate with Motion Control
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 5: Motion Control ── */}
+        {step === "motion-control" && resultImage && (
+          <div className="grid lg:grid-cols-2 gap-10">
+            {/* Left: generated model photo */}
+            <div>
+              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Your Model Photo</h3>
+              <div className="relative rounded-2xl overflow-hidden border border-violet-500/30 aspect-[3/4]">
+                <Image src={resultImage} alt="Model" fill className="object-cover" />
+                <button
+                  onClick={() => setStep("result")}
+                  className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white/70 hover:text-white rounded-lg p-2 transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Right: video upload + options */}
+            <div className="flex flex-col gap-5">
+              <div>
+                <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Motion Control</h3>
+                <p className="text-white/40 text-xs mb-5">
+                  Upload a reference video — Kling v2.6 Pro will animate your model photo following the motion in the video.
+                </p>
+
+                {/* Video drop zone */}
+                <div
+                  onDrop={handleVideoDrop}
+                  onDragOver={(e) => { e.preventDefault(); setIsVideoDragging(true); }}
+                  onDragLeave={() => setIsVideoDragging(false)}
+                  onClick={() => !motionVideoFile && videoInputRef.current?.click()}
+                  className={`relative rounded-2xl border-2 border-dashed transition-all duration-300 overflow-hidden ${
+                    motionVideoFile
+                      ? "border-fuchsia-400 bg-fuchsia-500/5"
+                      : isVideoDragging
+                      ? "border-fuchsia-400 bg-fuchsia-500/10 scale-[1.01]"
+                      : "border-white/20 hover:border-fuchsia-400/60 hover:bg-white/5 cursor-pointer"
+                  }`}
+                  style={{ minHeight: "200px" }}
+                >
+                  {motionVideoPreview ? (
+                    <div className="relative">
+                      <video
+                        src={motionVideoPreview}
+                        className="w-full rounded-xl"
+                        controls
+                        muted
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMotionVideoFile(null);
+                          setMotionVideoPreview(null);
+                        }}
+                        className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-white/70 hover:text-white rounded-lg p-1.5 transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-4 py-12 px-6 text-center">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-fuchsia-500/20 to-pink-500/20 border border-white/10 flex items-center justify-center">
+                        <Film className="w-7 h-7 text-fuchsia-400" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-white mb-1">Drop your reference video</p>
+                        <p className="text-white/40 text-xs">or click to browse · MP4, MOV, WEBM</p>
+                      </div>
+                    </div>
+                  )}
+                  <input
+                    ref={videoInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
+                  />
+                </div>
+              </div>
+
+              {/* Optional prompt */}
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider block mb-2">
+                  Prompt <span className="text-white/20 normal-case font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={motionPrompt}
+                  onChange={(e) => setMotionPrompt(e.target.value)}
+                  placeholder="e.g. walking confidently on a runway, hair flowing in the wind…"
+                  rows={3}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:border-fuchsia-400/60 resize-none transition-colors"
+                />
+              </div>
+
+              <button
+                onClick={runMotionControl}
+                disabled={!motionVideoFile}
+                className="w-full py-4 rounded-xl font-bold text-sm bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-fuchsia-500/30 flex items-center justify-center gap-2"
+              >
+                <Play className="w-4 h-4" />
+                Generate Video
+              </button>
+
+              <p className="text-xs text-white/25 text-center">
+                Uses Kling v2.6 Pro · character_orientation: video
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 6: Motion Processing ── */}
+        {step === "motion-processing" && (
+          <div className="max-w-md mx-auto text-center">
+            <div className="mb-10">
+              <div className="relative w-28 h-28 mx-auto mb-8">
+                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 animate-pulse opacity-30" />
+                <div
+                  className="absolute inset-2 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 opacity-60 animate-spin"
+                  style={{ animationDuration: "4s" }}
+                />
+                <div className="absolute inset-4 rounded-full bg-slate-950 flex items-center justify-center">
+                  <Film className="w-8 h-8 text-fuchsia-400" />
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Generating Your Video</h2>
+              <p className="text-white/40 text-sm">Kling v2.6 Pro is animating your model · this may take a minute</p>
+            </div>
+            <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
+              <div className="flex justify-between text-xs text-white/50 mb-2">
+                <span>Rendering…</span>
+                <span>{Math.round(motionProgress)}%</span>
+              </div>
+              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-fuchsia-500 to-pink-500 rounded-full transition-all duration-700"
+                  style={{ width: `${motionProgress}%` }}
+                />
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3 text-xs">
+                {[
+                  { label: "Uploading video", done: motionProgress > 15 },
+                  { label: "Analyzing motion", done: motionProgress > 35 },
+                  { label: "Applying to model", done: motionProgress > 60 },
+                  { label: "Rendering frames", done: motionProgress > 85 },
+                ].map((item) => (
+                  <div key={item.label} className={`flex items-center gap-2 transition-colors ${item.done ? "text-fuchsia-300" : "text-white/30"}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.done ? "bg-fuchsia-400" : "bg-white/20"}`} />
+                    {item.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 7: Video Result ── */}
+        {step === "video-result" && resultVideoUrl && (
+          <div className="grid lg:grid-cols-5 gap-10">
+            <div className="lg:col-span-3">
+              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Your Model Video</h3>
+              <div className="relative rounded-2xl overflow-hidden border border-fuchsia-500/30 shadow-2xl shadow-fuchsia-500/10">
+                <video
+                  src={resultVideoUrl}
+                  className="w-full rounded-2xl"
+                  controls
+                  autoPlay
+                  loop
+                  muted
+                />
+              </div>
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={downloadVideo}
+                  className="flex-1 py-3 rounded-xl bg-white/10 border border-white/20 hover:bg-white/20 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Download Video
+                </button>
+                <button
+                  onClick={reset}
+                  className="flex-1 py-3 rounded-xl bg-fuchsia-600/80 hover:bg-fuchsia-500 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Start Over
+                </button>
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 flex flex-col gap-5">
+              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest">Summary</h3>
+
+              {/* Still photo */}
+              {resultImage && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <p className="text-xs text-white/40 mb-3 uppercase tracking-wider font-semibold">Source Photo</p>
+                  <div className="relative rounded-xl overflow-hidden aspect-[3/4]">
+                    <Image src={resultImage} alt="Model photo" fill className="object-cover" />
+                  </div>
+                  <button
+                    onClick={downloadResult}
+                    className="mt-3 w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-xs font-medium flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download Photo
+                  </button>
+                </div>
+              )}
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Film className="w-4 h-4 text-fuchsia-400" />
+                  <span className="text-xs font-semibold text-fuchsia-300 uppercase tracking-wider">Generation Info</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-white/50">
+                  <li className="flex justify-between"><span>Model</span><span className="text-white/70">Kling v2.6 Pro</span></li>
+                  <li className="flex justify-between"><span>Orientation</span><span className="text-white/70">video</span></li>
+                  <li className="flex justify-between"><span>Face swap</span><span className="text-white/70">Fal.ai</span></li>
+                  <li className="flex justify-between"><span>Analysis</span><span className="text-white/70">Gemini 2.0 Flash</span></li>
+                  {motionPrompt && (
+                    <li className="pt-2 border-t border-white/10">
+                      <span className="block text-white/30 mb-1">Prompt</span>
+                      <span className="text-white/60 italic">{motionPrompt}</span>
+                    </li>
+                  )}
+                </ul>
               </div>
             </div>
           </div>

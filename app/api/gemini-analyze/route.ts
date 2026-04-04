@@ -9,14 +9,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "imageBase64 is required." }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY environment variable is not set." },
-        { status: 500 }
-      );
-    }
-
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     // Strip the data URL prefix to get raw base64
