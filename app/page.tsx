@@ -3,13 +3,18 @@
 import { useState, useCallback, useRef } from "react";
 import {
   Upload, Sparkles, ArrowRight, RotateCcw, Download,
-  Zap, Camera, User, Film, Play,
+  Zap, Camera, User, Film, Play, Wand2, Users,
 } from "lucide-react";
 import Image from "next/image";
 
+// ── Types ────────────────────────────────────────────────────
+type Workflow = "face-swap" | "image-edition" | "person-swap";
+
 type Step =
+  | "workflow-select"
   | "upload"
   | "select-model"
+  | "edit-prompt"
   | "processing"
   | "result"
   | "motion-control"
@@ -22,6 +27,7 @@ interface GeminiAnalysis {
   suggestions: string[];
 }
 
+// ── Constants ────────────────────────────────────────────────
 const MODEL_PRESETS = [
   {
     id: "fashion-editorial",
@@ -53,28 +59,84 @@ const MODEL_PRESETS = [
   },
 ];
 
-const STEPS = [
-  { key: "upload", label: "Upload", icon: Camera },
-  { key: "select-model", label: "Style", icon: User },
-  { key: "processing", label: "Processing", icon: Zap },
-  { key: "result", label: "Photo", icon: Sparkles },
-  { key: "motion-control", label: "Motion", icon: Film },
-  { key: "motion-processing", label: "Rendering", icon: Zap },
-  { key: "video-result", label: "Video", icon: Play },
+const WORKFLOW_STEPS: Record<Workflow, Array<{ key: string; label: string; icon: React.ComponentType<{ className?: string }> }>> = {
+  "face-swap": [
+    { key: "upload",           label: "Upload",     icon: Camera   },
+    { key: "select-model",     label: "Style",      icon: User     },
+    { key: "processing",       label: "Processing", icon: Zap      },
+    { key: "result",           label: "Photo",      icon: Sparkles },
+    { key: "motion-control",   label: "Motion",     icon: Film     },
+    { key: "motion-processing",label: "Rendering",  icon: Zap      },
+    { key: "video-result",     label: "Video",      icon: Play     },
+  ],
+  "image-edition": [
+    { key: "upload",     label: "Upload",     icon: Camera   },
+    { key: "edit-prompt",label: "Edit",       icon: Wand2    },
+    { key: "processing", label: "Processing", icon: Zap      },
+    { key: "result",     label: "Result",     icon: Sparkles },
+  ],
+  "person-swap": [
+    { key: "upload",      label: "Upload",     icon: Camera   },
+    { key: "select-model",label: "Reference",  icon: Users    },
+    { key: "processing",  label: "Processing", icon: Zap      },
+    { key: "result",      label: "Result",     icon: Sparkles },
+  ],
+};
+
+const WORKFLOWS: Array<{
+  id: Workflow;
+  title: string;
+  subtitle: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+  gradient: string;
+  badge: string;
+}> = [
+  {
+    id: "face-swap",
+    title: "Face Swap",
+    subtitle: "Fal.ai + Gemini",
+    description: "Place your face onto professional model shots, get an AI style analysis, and optionally animate the result with motion control.",
+    icon: User,
+    gradient: "from-violet-600 to-fuchsia-600",
+    badge: "Original",
+  },
+  {
+    id: "image-edition",
+    title: "Image Edition",
+    subtitle: "Gemini 2.0 Flash",
+    description: "Upload your photo and describe how you want it edited — change outfits, backgrounds, lighting, style, and more with a simple text prompt.",
+    icon: Wand2,
+    gradient: "from-cyan-600 to-blue-600",
+    badge: "New",
+  },
+  {
+    id: "person-swap",
+    title: "Person Swap",
+    subtitle: "GPT Image 2",
+    description: "Replace your entire appearance — clothing, hair, style — to match a reference model or preset style, while keeping your face.",
+    icon: Users,
+    gradient: "from-emerald-600 to-teal-600",
+    badge: "New",
+  },
 ];
 
-export default function FaceSwapPage() {
-  const [step, setStep] = useState<Step>("upload");
+// ── Component ─────────────────────────────────────────────────
+export default function AIModelsFactory() {
+  const [step, setStep] = useState<Step>("workflow-select");
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
+
+  // Shared
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<(typeof MODEL_PRESETS)[0] | null>(null);
   const [customModelImage, setCustomModelImage] = useState<string | null>(null);
   const [resultImage, setResultImage] = useState<string | null>(null);
-  const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiAnalysis | null>(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Motion control
+  // Face-swap specific
+  const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiAnalysis | null>(null);
   const [motionVideoFile, setMotionVideoFile] = useState<File | null>(null);
   const [motionVideoPreview, setMotionVideoPreview] = useState<string | null>(null);
   const [motionPrompt, setMotionPrompt] = useState("");
@@ -82,20 +144,40 @@ export default function FaceSwapPage() {
   const [isVideoDragging, setIsVideoDragging] = useState(false);
   const [motionProgress, setMotionProgress] = useState(0);
 
+  // Image-edition specific
+  const [editPrompt, setEditPrompt] = useState("");
+
   const userPhotoInputRef = useRef<HTMLInputElement>(null);
   const customModelInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Photo upload ─────────────────────────────────────────────
-  const handleUserPhotoUpload = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setUserPhoto(e.target?.result as string);
-      setError(null);
-      setStep("select-model");
-    };
-    reader.readAsDataURL(file);
-  }, []);
+  // ── Derived ──────────────────────────────────────────────────
+  const steps = workflow ? WORKFLOW_STEPS[workflow] : [];
+  const currentStepIdx = steps.findIndex((s) => s.key === step);
+
+  // ── Handlers ─────────────────────────────────────────────────
+  const selectWorkflow = (w: Workflow) => {
+    setWorkflow(w);
+    setStep("upload");
+    setError(null);
+  };
+
+  const handleUserPhotoUpload = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setUserPhoto(e.target?.result as string);
+        setError(null);
+        if (workflow === "image-edition") {
+          setStep("edit-prompt");
+        } else {
+          setStep("select-model");
+        }
+      };
+      reader.readAsDataURL(file);
+    },
+    [workflow]
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -117,7 +199,7 @@ export default function FaceSwapPage() {
     reader.readAsDataURL(file);
   }, []);
 
-  // ── Face swap ────────────────────────────────────────────────
+  // ── Face Swap ─────────────────────────────────────────────────
   const runFaceSwap = async () => {
     if (!userPhoto) return;
     const targetImage = customModelImage || selectedModel?.image;
@@ -130,9 +212,7 @@ export default function FaceSwapPage() {
     setProgress(0);
     setError(null);
 
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => Math.min(prev + Math.random() * 12, 88));
-    }, 800);
+    const interval = setInterval(() => setProgress((p) => Math.min(p + Math.random() * 12, 88)), 800);
 
     try {
       const [geminiRes, falRes] = await Promise.all([
@@ -148,7 +228,7 @@ export default function FaceSwapPage() {
         }),
       ]);
 
-      clearInterval(progressInterval);
+      clearInterval(interval);
       setProgress(95);
 
       if (!falRes.ok) {
@@ -167,13 +247,97 @@ export default function FaceSwapPage() {
       setProgress(100);
       setStep("result");
     } catch (err: unknown) {
-      clearInterval(progressInterval);
+      clearInterval(interval);
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setStep("select-model");
     }
   };
 
-  // ── Motion control ───────────────────────────────────────────
+  // ── Gemini Image Edition ──────────────────────────────────────
+  const runGeminiEdit = async () => {
+    if (!userPhoto || !editPrompt.trim()) return;
+
+    setStep("processing");
+    setProgress(0);
+    setError(null);
+
+    const interval = setInterval(() => setProgress((p) => Math.min(p + Math.random() * 10, 88)), 900);
+
+    try {
+      const res = await fetch("/api/gemini-edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: userPhoto, prompt: editPrompt.trim() }),
+      });
+
+      clearInterval(interval);
+      setProgress(95);
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Gemini image edit failed.");
+      }
+
+      const data = await res.json();
+      setResultImage(data.imageUrl);
+      setProgress(100);
+      setStep("result");
+    } catch (err: unknown) {
+      clearInterval(interval);
+      setError(err instanceof Error ? err.message : "Image edit failed. Please try again.");
+      setStep("edit-prompt");
+    }
+  };
+
+  // ── Person Swap ───────────────────────────────────────────────
+  const runPersonSwap = async () => {
+    if (!userPhoto) return;
+    const targetImage = customModelImage || null;
+    const targetLabel = selectedModel?.label ?? null;
+
+    if (!targetImage && !selectedModel) {
+      setError("Please select a style or upload a custom reference image.");
+      return;
+    }
+
+    setStep("processing");
+    setProgress(0);
+    setError(null);
+
+    const interval = setInterval(() => setProgress((p) => Math.min(p + Math.random() * 8, 88)), 1000);
+
+    try {
+      const res = await fetch("/api/person-swap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceImage: userPhoto, targetImage, targetLabel }),
+      });
+
+      clearInterval(interval);
+      setProgress(95);
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Person swap failed.");
+      }
+
+      const data = await res.json();
+      setResultImage(data.imageUrl);
+      setProgress(100);
+      setStep("result");
+    } catch (err: unknown) {
+      clearInterval(interval);
+      setError(err instanceof Error ? err.message : "Person swap failed. Please try again.");
+      setStep("select-model");
+    }
+  };
+
+  const handleSelectModelNext = () => {
+    if (workflow === "person-swap") runPersonSwap();
+    else runFaceSwap();
+  };
+
+  // ── Motion Control ────────────────────────────────────────────
   const handleVideoUpload = useCallback((file: File) => {
     setMotionVideoFile(file);
     setMotionVideoPreview(URL.createObjectURL(file));
@@ -197,9 +361,7 @@ export default function FaceSwapPage() {
     setMotionProgress(0);
     setError(null);
 
-    const progressInterval = setInterval(() => {
-      setMotionProgress((prev) => Math.min(prev + Math.random() * 6, 88));
-    }, 1200);
+    const interval = setInterval(() => setMotionProgress((p) => Math.min(p + Math.random() * 6, 88)), 1200);
 
     try {
       const formData = new FormData();
@@ -207,12 +369,9 @@ export default function FaceSwapPage() {
       formData.append("imageUrl", resultImage);
       if (motionPrompt.trim()) formData.append("prompt", motionPrompt.trim());
 
-      const res = await fetch("/api/motion-control", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch("/api/motion-control", { method: "POST", body: formData });
 
-      clearInterval(progressInterval);
+      clearInterval(interval);
       setMotionProgress(95);
 
       if (!res.ok) {
@@ -225,15 +384,16 @@ export default function FaceSwapPage() {
       setMotionProgress(100);
       setStep("video-result");
     } catch (err: unknown) {
-      clearInterval(progressInterval);
+      clearInterval(interval);
       setError(err instanceof Error ? err.message : "Video generation failed. Please try again.");
       setStep("motion-control");
     }
   };
 
-  // ── Reset ────────────────────────────────────────────────────
+  // ── Reset ─────────────────────────────────────────────────────
   const reset = () => {
-    setStep("upload");
+    setStep("workflow-select");
+    setWorkflow(null);
     setUserPhoto(null);
     setSelectedModel(null);
     setCustomModelImage(null);
@@ -241,6 +401,7 @@ export default function FaceSwapPage() {
     setGeminiAnalysis(null);
     setProgress(0);
     setError(null);
+    setEditPrompt("");
     setMotionVideoFile(null);
     setMotionVideoPreview(null);
     setMotionPrompt("");
@@ -264,69 +425,124 @@ export default function FaceSwapPage() {
     a.click();
   };
 
-  const currentStepIdx = STEPS.findIndex((s) => s.key === step);
+  // ── Processing labels per workflow ────────────────────────────
+  const processingLabels =
+    workflow === "image-edition"
+      ? [
+          { label: "Analyzing image", done: progress > 20 },
+          { label: "Generating edit", done: progress > 45 },
+          { label: "Applying changes", done: progress > 65 },
+          { label: "Finalizing", done: progress > 85 },
+        ]
+      : workflow === "person-swap"
+      ? [
+          { label: "Analyzing person", done: progress > 20 },
+          { label: "Generating transformation", done: progress > 45 },
+          { label: "Applying style", done: progress > 65 },
+          { label: "Finalizing", done: progress > 85 },
+        ]
+      : [
+          { label: "Detecting face", done: progress > 20 },
+          { label: "Analyzing lighting", done: progress > 40 },
+          { label: "Swapping face (Fal.ai)", done: progress > 65 },
+          { label: "Gemini analysis", done: progress > 85 },
+        ];
 
+  const processingTitle =
+    workflow === "image-edition"
+      ? "Editing Your Photo"
+      : workflow === "person-swap"
+      ? "Swapping Your Look"
+      : "Creating Your Model Photo";
+
+  const processingSubtitle =
+    workflow === "image-edition"
+      ? "Gemini 2.0 Flash is applying your edits"
+      : workflow === "person-swap"
+      ? "GPT Image 2 is transforming your appearance"
+      : "Fal.ai is swapping faces · Gemini is analyzing your shot";
+
+  // ── Select-model labels per workflow ──────────────────────────
+  const selectModelTitle = workflow === "person-swap" ? "Choose Reference Style" : "Choose a Style";
+  const selectModelButton = workflow === "person-swap" ? "Swap My Look" : "Generate My Model Photo";
+
+  // ── Render ────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white">
       {/* Header */}
       <header className="border-b border-white/10 backdrop-blur-sm bg-white/5 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <button
+            onClick={reset}
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/30">
               <Sparkles className="w-5 h-5" />
             </div>
-            <div>
+            <div className="text-left">
               <h1 className="font-bold text-lg leading-tight">AI Models Factory</h1>
-              <p className="text-xs text-white/40">Powered by Gemini + Fal.ai</p>
+              <p className="text-xs text-white/40">
+                {workflow === "face-swap"
+                  ? "Fal.ai + Gemini"
+                  : workflow === "image-edition"
+                  ? "Gemini 2.0 Flash"
+                  : workflow === "person-swap"
+                  ? "GPT Image 2"
+                  : "3 AI Workflows"}
+              </p>
             </div>
-          </div>
+          </button>
+
           <div className="flex items-center gap-2 text-xs text-white/50">
             <Zap className="w-3.5 h-3.5 text-violet-400" />
-            <span>Google Gemini</span>
+            <span>Gemini</span>
             <span className="text-white/20">·</span>
             <span>Fal.ai</span>
             <span className="text-white/20">·</span>
-            <span>Kling v2.6</span>
+            <span>GPT Image 2</span>
           </div>
         </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-12">
-        {/* Step Indicator */}
-        <div className="flex items-center justify-center gap-2 mb-12 flex-wrap">
-          {STEPS.map((s, i) => {
-            const isActive = s.key === step;
-            const isDone = currentStepIdx > i;
-            const Icon = s.icon;
-            return (
-              <div key={s.key} className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${
-                      isDone
-                        ? "bg-violet-500 text-white"
-                        : isActive
-                        ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/40 scale-110"
-                        : "bg-white/10 text-white/20"
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
+
+        {/* Step Indicator (only shown after workflow selected) */}
+        {workflow && step !== "workflow-select" && (
+          <div className="flex items-center justify-center gap-2 mb-12 flex-wrap">
+            {steps.map((s, i) => {
+              const isActive = s.key === step;
+              const isDone = currentStepIdx > i;
+              const Icon = s.icon;
+              return (
+                <div key={s.key} className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${
+                        isDone
+                          ? "bg-violet-500 text-white"
+                          : isActive
+                          ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/40 scale-110"
+                          : "bg-white/10 text-white/20"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <span
+                      className={`text-xs font-medium hidden sm:block transition-colors ${
+                        isActive ? "text-white" : isDone ? "text-violet-400" : "text-white/25"
+                      }`}
+                    >
+                      {s.label}
+                    </span>
                   </div>
-                  <span
-                    className={`text-xs font-medium hidden sm:block transition-colors ${
-                      isActive ? "text-white" : isDone ? "text-violet-400" : "text-white/25"
-                    }`}
-                  >
-                    {s.label}
-                  </span>
+                  {i < steps.length - 1 && (
+                    <ArrowRight className="w-3 h-3 text-white/15 flex-shrink-0" />
+                  )}
                 </div>
-                {i < STEPS.length - 1 && (
-                  <ArrowRight className="w-3 h-3 text-white/15 flex-shrink-0" />
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Error Banner */}
         {error && (
@@ -335,15 +551,74 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* ── STEP 1: Upload ── */}
+        {/* ── WORKFLOW SELECT ── */}
+        {step === "workflow-select" && (
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-4xl font-bold mb-4 bg-gradient-to-r from-violet-300 to-fuchsia-300 bg-clip-text text-transparent">
+                AI Models Factory
+              </h2>
+              <p className="text-white/50 text-base max-w-lg mx-auto">
+                Choose your workflow — each uses a different AI to transform your photo into a professional model shot.
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-6">
+              {WORKFLOWS.map((w) => {
+                const Icon = w.icon;
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => selectWorkflow(w.id)}
+                    className="relative group text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 p-6 transition-all duration-200 hover:scale-[1.02] hover:shadow-xl hover:shadow-black/20"
+                  >
+                    {/* Badge */}
+                    <span
+                      className={`absolute top-4 right-4 text-xs font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${w.gradient} text-white`}
+                    >
+                      {w.badge}
+                    </span>
+
+                    {/* Icon */}
+                    <div
+                      className={`w-12 h-12 rounded-xl bg-gradient-to-br ${w.gradient} flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform`}
+                    >
+                      <Icon className="w-6 h-6 text-white" />
+                    </div>
+
+                    {/* Text */}
+                    <h3 className="font-bold text-lg mb-1 text-white">{w.title}</h3>
+                    <p className="text-xs text-white/40 mb-3 font-medium">{w.subtitle}</p>
+                    <p className="text-sm text-white/55 leading-relaxed">{w.description}</p>
+
+                    {/* Arrow */}
+                    <div className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-white/40 group-hover:text-white/70 transition-colors">
+                      Start <ArrowRight className="w-3.5 h-3.5" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP: Upload ── */}
         {step === "upload" && (
           <div className="max-w-xl mx-auto">
             <div className="text-center mb-10">
               <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-violet-300 to-fuchsia-300 bg-clip-text text-transparent">
-                Become an AI Model
+                {workflow === "image-edition"
+                  ? "Upload Your Photo"
+                  : workflow === "person-swap"
+                  ? "Upload Your Photo"
+                  : "Become an AI Model"}
               </h2>
               <p className="text-white/50 text-sm">
-                Upload your photo and we&apos;ll place your face into professional model shots — then bring them to life with motion.
+                {workflow === "image-edition"
+                  ? "Upload your photo and describe how you want it edited with Gemini."
+                  : workflow === "person-swap"
+                  ? "Upload your photo and we'll replace your entire look using GPT Image 2."
+                  : "Upload your photo and we'll place your face into professional model shots."}
               </p>
             </div>
             <div
@@ -372,10 +647,76 @@ export default function FaceSwapPage() {
                 onChange={(e) => e.target.files?.[0] && handleUserPhotoUpload(e.target.files[0])}
               />
             </div>
+            <button
+              onClick={() => { setStep("workflow-select"); setError(null); }}
+              className="mt-5 w-full py-2.5 rounded-xl text-sm text-white/40 hover:text-white/60 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Back to workflow selection
+            </button>
           </div>
         )}
 
-        {/* ── STEP 2: Select Model ── */}
+        {/* ── STEP: Edit Prompt (image-edition) ── */}
+        {step === "edit-prompt" && workflow === "image-edition" && userPhoto && (
+          <div className="grid lg:grid-cols-2 gap-10">
+            <div>
+              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Your Photo</h3>
+              <div className="relative rounded-2xl overflow-hidden bg-white/5 border border-white/10 aspect-[3/4]">
+                <Image src={userPhoto} alt="Your photo" fill className="object-cover" />
+                <button
+                  onClick={() => { setStep("upload"); setUserPhoto(null); }}
+                  className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white/70 hover:text-white rounded-lg p-2 transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-5">
+              <div>
+                <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-1">Edit Prompt</h3>
+                <p className="text-white/35 text-xs mb-4">Describe what you want Gemini to change in your photo.</p>
+
+                <textarea
+                  value={editPrompt}
+                  onChange={(e) => setEditPrompt(e.target.value)}
+                  placeholder="e.g. Make me look like a high-fashion model in Paris wearing a elegant black dress, professional studio lighting"
+                  rows={5}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:border-cyan-400/60 resize-none transition-colors"
+                />
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {[
+                    "Change outfit to business suit",
+                    "Add studio lighting",
+                    "Make it look editorial fashion",
+                    "Change background to beach",
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      onClick={() => setEditPrompt(suggestion)}
+                      className="text-xs text-left px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 hover:bg-cyan-500/5 text-white/50 hover:text-white/70 transition-all"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={runGeminiEdit}
+                disabled={!editPrompt.trim()}
+                className="mt-auto w-full py-4 rounded-xl font-bold text-sm bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-cyan-500/30 flex items-center justify-center gap-2"
+              >
+                <Wand2 className="w-4 h-4" />
+                Edit with Gemini
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP: Select Model (face-swap & person-swap) ── */}
         {step === "select-model" && (
           <div className="grid lg:grid-cols-2 gap-10">
             <div>
@@ -392,7 +733,7 @@ export default function FaceSwapPage() {
             </div>
 
             <div>
-              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Choose a Style</h3>
+              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">{selectModelTitle}</h3>
               <div className="grid grid-cols-2 gap-3 mb-5">
                 {MODEL_PRESETS.map((model) => (
                   <button
@@ -443,7 +784,9 @@ export default function FaceSwapPage() {
                       <Upload className="w-5 h-5 text-white/40" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-white/70">Upload custom model image</p>
+                      <p className="text-sm font-medium text-white/70">
+                        {workflow === "person-swap" ? "Upload custom reference" : "Upload custom model image"}
+                      </p>
                       <p className="text-xs text-white/30">Use your own reference photo</p>
                     </div>
                   </>
@@ -458,18 +801,18 @@ export default function FaceSwapPage() {
               </div>
 
               <button
-                onClick={runFaceSwap}
+                onClick={handleSelectModelNext}
                 disabled={!selectedModel && !customModelImage}
                 className="mt-5 w-full py-4 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-violet-500/30 flex items-center justify-center gap-2"
               >
                 <Sparkles className="w-4 h-4" />
-                Generate My Model Photo
+                {selectModelButton}
               </button>
             </div>
           </div>
         )}
 
-        {/* ── STEP 3: Processing (face swap) ── */}
+        {/* ── STEP: Processing ── */}
         {step === "processing" && (
           <div className="max-w-md mx-auto text-center">
             <div className="mb-10">
@@ -483,8 +826,8 @@ export default function FaceSwapPage() {
                   <Sparkles className="w-8 h-8 text-violet-400" />
                 </div>
               </div>
-              <h2 className="text-2xl font-bold mb-2">Creating Your Model Photo</h2>
-              <p className="text-white/40 text-sm">Fal.ai is swapping faces · Gemini is analyzing your shot</p>
+              <h2 className="text-2xl font-bold mb-2">{processingTitle}</h2>
+              <p className="text-white/40 text-sm">{processingSubtitle}</p>
             </div>
             <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
               <div className="flex justify-between text-xs text-white/50 mb-2">
@@ -498,12 +841,7 @@ export default function FaceSwapPage() {
                 />
               </div>
               <div className="mt-5 grid grid-cols-2 gap-3 text-xs">
-                {[
-                  { label: "Detecting face", done: progress > 20 },
-                  { label: "Analyzing lighting", done: progress > 40 },
-                  { label: "Swapping face (Fal.ai)", done: progress > 65 },
-                  { label: "Gemini analysis", done: progress > 85 },
-                ].map((item) => (
+                {processingLabels.map((item) => (
                   <div key={item.label} className={`flex items-center gap-2 transition-colors ${item.done ? "text-violet-300" : "text-white/30"}`}>
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.done ? "bg-violet-400" : "bg-white/20"}`} />
                     {item.label}
@@ -514,11 +852,13 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* ── STEP 4: Result ── */}
+        {/* ── STEP: Result ── */}
         {step === "result" && resultImage && (
           <div className="grid lg:grid-cols-5 gap-10">
             <div className="lg:col-span-3">
-              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Your Model Photo</h3>
+              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">
+                {workflow === "image-edition" ? "Edited Photo" : workflow === "person-swap" ? "Transformed Photo" : "Your Model Photo"}
+              </h3>
               <div className="relative rounded-2xl overflow-hidden border border-violet-500/30 shadow-2xl shadow-violet-500/10 aspect-[3/4]">
                 <Image src={resultImage} alt="Result" fill className="object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
@@ -542,46 +882,89 @@ export default function FaceSwapPage() {
             </div>
 
             <div className="lg:col-span-2 flex flex-col gap-5">
-              <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest">Gemini Analysis</h3>
-
-              {geminiAnalysis ? (
+              {/* Gemini analysis — only for face-swap */}
+              {workflow === "face-swap" && (
                 <>
-                  <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Zap className="w-4 h-4 text-violet-400" />
-                      <span className="text-xs font-semibold text-violet-300 uppercase tracking-wider">Style Read</span>
-                    </div>
-                    <p className="text-sm text-white/70 leading-relaxed">{geminiAnalysis.description}</p>
-                  </div>
-                  <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Sparkles className="w-4 h-4 text-fuchsia-400" />
-                      <span className="text-xs font-semibold text-fuchsia-300 uppercase tracking-wider">Model Style</span>
-                    </div>
-                    <p className="text-sm text-white/70 leading-relaxed">{geminiAnalysis.modelStyle}</p>
-                  </div>
-                  {geminiAnalysis.suggestions.length > 0 && (
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Camera className="w-4 h-4 text-cyan-400" />
-                        <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Pro Tips</span>
+                  <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest">Gemini Analysis</h3>
+                  {geminiAnalysis ? (
+                    <>
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Zap className="w-4 h-4 text-violet-400" />
+                          <span className="text-xs font-semibold text-violet-300 uppercase tracking-wider">Style Read</span>
+                        </div>
+                        <p className="text-sm text-white/70 leading-relaxed">{geminiAnalysis.description}</p>
                       </div>
-                      <ul className="space-y-2">
-                        {geminiAnalysis.suggestions.map((s, i) => (
-                          <li key={i} className="text-sm text-white/60 flex items-start gap-2">
-                            <span className="text-violet-400 mt-0.5">·</span>
-                            {s}
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Sparkles className="w-4 h-4 text-fuchsia-400" />
+                          <span className="text-xs font-semibold text-fuchsia-300 uppercase tracking-wider">Model Style</span>
+                        </div>
+                        <p className="text-sm text-white/70 leading-relaxed">{geminiAnalysis.modelStyle}</p>
+                      </div>
+                      {geminiAnalysis.suggestions.length > 0 && (
+                        <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Camera className="w-4 h-4 text-cyan-400" />
+                            <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Pro Tips</span>
+                          </div>
+                          <ul className="space-y-2">
+                            {geminiAnalysis.suggestions.map((s, i) => (
+                              <li key={i} className="text-sm text-white/60 flex items-start gap-2">
+                                <span className="text-violet-400 mt-0.5">·</span>
+                                {s}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center gap-3">
+                      <Zap className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                      <p className="text-sm text-white/40">Gemini analysis unavailable.</p>
                     </div>
                   )}
                 </>
-              ) : (
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center gap-3">
-                  <Zap className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                  <p className="text-sm text-white/40">Gemini analysis unavailable.</p>
-                </div>
+              )}
+
+              {/* Info card for image-edition / person-swap */}
+              {workflow !== "face-swap" && (
+                <>
+                  <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest">Details</h3>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Zap className="w-4 h-4 text-violet-400" />
+                      <span className="text-xs font-semibold text-violet-300 uppercase tracking-wider">Generation Info</span>
+                    </div>
+                    <ul className="space-y-1.5 text-xs text-white/50">
+                      <li className="flex justify-between">
+                        <span>Workflow</span>
+                        <span className="text-white/70">
+                          {workflow === "image-edition" ? "Image Edition" : "Person Swap"}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Model</span>
+                        <span className="text-white/70">
+                          {workflow === "image-edition" ? "Gemini 2.0 Flash" : "GPT Image 2"}
+                        </span>
+                      </li>
+                      {workflow === "image-edition" && editPrompt && (
+                        <li className="pt-2 border-t border-white/10">
+                          <span className="block text-white/30 mb-1">Prompt</span>
+                          <span className="text-white/60 italic">{editPrompt}</span>
+                        </li>
+                      )}
+                      {workflow === "person-swap" && (selectedModel || customModelImage) && (
+                        <li className="flex justify-between">
+                          <span>Reference style</span>
+                          <span className="text-white/70">{selectedModel?.label ?? "Custom"}</span>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </>
               )}
 
               {/* Before / After */}
@@ -600,22 +983,23 @@ export default function FaceSwapPage() {
                 </div>
               </div>
 
-              {/* Motion Control CTA */}
-              <button
-                onClick={() => setStep("motion-control")}
-                className="w-full py-4 rounded-xl font-bold text-sm bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 transition-all duration-200 shadow-lg shadow-fuchsia-500/30 flex items-center justify-center gap-2"
-              >
-                <Film className="w-4 h-4" />
-                Animate with Motion Control
-              </button>
+              {/* Motion Control CTA — only for face-swap */}
+              {workflow === "face-swap" && (
+                <button
+                  onClick={() => setStep("motion-control")}
+                  className="w-full py-4 rounded-xl font-bold text-sm bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 transition-all duration-200 shadow-lg shadow-fuchsia-500/30 flex items-center justify-center gap-2"
+                >
+                  <Film className="w-4 h-4" />
+                  Animate with Motion Control
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {/* ── STEP 5: Motion Control ── */}
+        {/* ── STEP: Motion Control ── */}
         {step === "motion-control" && resultImage && (
           <div className="grid lg:grid-cols-2 gap-10">
-            {/* Left: generated model photo */}
             <div>
               <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Your Model Photo</h3>
               <div className="relative rounded-2xl overflow-hidden border border-violet-500/30 aspect-[3/4]">
@@ -629,7 +1013,6 @@ export default function FaceSwapPage() {
               </div>
             </div>
 
-            {/* Right: video upload + options */}
             <div className="flex flex-col gap-5">
               <div>
                 <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Motion Control</h3>
@@ -637,7 +1020,6 @@ export default function FaceSwapPage() {
                   Upload a reference video — Kling v2.6 Pro will animate your model photo following the motion in the video.
                 </p>
 
-                {/* Video drop zone */}
                 <div
                   onDrop={handleVideoDrop}
                   onDragOver={(e) => { e.preventDefault(); setIsVideoDragging(true); }}
@@ -654,12 +1036,7 @@ export default function FaceSwapPage() {
                 >
                   {motionVideoPreview ? (
                     <div className="relative">
-                      <video
-                        src={motionVideoPreview}
-                        className="w-full rounded-xl"
-                        controls
-                        muted
-                      />
+                      <video src={motionVideoPreview} className="w-full rounded-xl" controls muted />
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -692,7 +1069,6 @@ export default function FaceSwapPage() {
                 </div>
               </div>
 
-              {/* Optional prompt */}
               <div>
                 <label className="text-xs font-semibold text-white/40 uppercase tracking-wider block mb-2">
                   Prompt <span className="text-white/20 normal-case font-normal">(optional)</span>
@@ -722,7 +1098,7 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* ── STEP 6: Motion Processing ── */}
+        {/* ── STEP: Motion Processing ── */}
         {step === "motion-processing" && (
           <div className="max-w-md mx-auto text-center">
             <div className="mb-10">
@@ -752,10 +1128,10 @@ export default function FaceSwapPage() {
               </div>
               <div className="mt-5 grid grid-cols-2 gap-3 text-xs">
                 {[
-                  { label: "Uploading video", done: motionProgress > 15 },
-                  { label: "Analyzing motion", done: motionProgress > 35 },
+                  { label: "Uploading video",   done: motionProgress > 15 },
+                  { label: "Analyzing motion",  done: motionProgress > 35 },
                   { label: "Applying to model", done: motionProgress > 60 },
-                  { label: "Rendering frames", done: motionProgress > 85 },
+                  { label: "Rendering frames",  done: motionProgress > 85 },
                 ].map((item) => (
                   <div key={item.label} className={`flex items-center gap-2 transition-colors ${item.done ? "text-fuchsia-300" : "text-white/30"}`}>
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.done ? "bg-fuchsia-400" : "bg-white/20"}`} />
@@ -767,20 +1143,13 @@ export default function FaceSwapPage() {
           </div>
         )}
 
-        {/* ── STEP 7: Video Result ── */}
+        {/* ── STEP: Video Result ── */}
         {step === "video-result" && resultVideoUrl && (
           <div className="grid lg:grid-cols-5 gap-10">
             <div className="lg:col-span-3">
               <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-4">Your Model Video</h3>
               <div className="relative rounded-2xl overflow-hidden border border-fuchsia-500/30 shadow-2xl shadow-fuchsia-500/10">
-                <video
-                  src={resultVideoUrl}
-                  className="w-full rounded-2xl"
-                  controls
-                  autoPlay
-                  loop
-                  muted
-                />
+                <video src={resultVideoUrl} className="w-full rounded-2xl" controls autoPlay loop muted />
               </div>
               <div className="flex gap-3 mt-4">
                 <button
@@ -803,7 +1172,6 @@ export default function FaceSwapPage() {
             <div className="lg:col-span-2 flex flex-col gap-5">
               <h3 className="text-sm font-semibold text-white/50 uppercase tracking-widest">Summary</h3>
 
-              {/* Still photo */}
               {resultImage && (
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                   <p className="text-xs text-white/40 mb-3 uppercase tracking-wider font-semibold">Source Photo</p>
