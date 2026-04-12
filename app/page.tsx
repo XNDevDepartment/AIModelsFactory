@@ -4,8 +4,11 @@ import { useState, useCallback, useRef } from "react";
 import {
   Upload, Sparkles, ArrowRight, RotateCcw, Download,
   Zap, Camera, User, Film, Play, Wand2, Users,
+  BookmarkPlus, Library, CheckCircle, X,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
+import type { CmsWorkflow } from "@/lib/cms";
 
 // ── Types ────────────────────────────────────────────────────
 type Workflow = "face-swap" | "image-edition" | "person-swap";
@@ -146,6 +149,11 @@ export default function AIModelsFactory() {
 
   // Image-edition specific
   const [editPrompt, setEditPrompt] = useState("");
+
+  // CMS Publish modal
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [publishTitle, setPublishTitle] = useState("");
+  const [publishStatus, setPublishStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
 
   const userPhotoInputRef = useRef<HTMLInputElement>(null);
   const customModelInputRef = useRef<HTMLInputElement>(null);
@@ -425,6 +433,41 @@ export default function AIModelsFactory() {
     a.click();
   };
 
+  // ── CMS Publish ───────────────────────────────────────────────
+  const openPublishModal = () => {
+    setPublishTitle("");
+    setPublishStatus("idle");
+    setPublishModalOpen(true);
+  };
+
+  const publishItem = async () => {
+    if (!publishTitle.trim()) return;
+    setPublishStatus("loading");
+
+    const isVideo = step === "video-result";
+    const cmsWorkflow: CmsWorkflow = isVideo
+      ? "motion-control"
+      : (workflow as CmsWorkflow) ?? "face-swap";
+
+    try {
+      const res = await fetch("/api/cms/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: publishTitle.trim(),
+          type: isVideo ? "video" : "image",
+          url: isVideo ? resultVideoUrl! : resultImage!,
+          thumbnail: isVideo ? (resultImage ?? resultVideoUrl!) : resultImage!,
+          workflow: cmsWorkflow,
+        }),
+      });
+      if (!res.ok) throw new Error("Publish failed");
+      setPublishStatus("done");
+    } catch {
+      setPublishStatus("error");
+    }
+  };
+
   // ── Processing labels per workflow ────────────────────────────
   const processingLabels =
     workflow === "image-edition"
@@ -493,13 +536,22 @@ export default function AIModelsFactory() {
             </div>
           </button>
 
-          <div className="flex items-center gap-2 text-xs text-white/50">
-            <Zap className="w-3.5 h-3.5 text-violet-400" />
-            <span>Gemini</span>
-            <span className="text-white/20">·</span>
-            <span>Fal.ai</span>
-            <span className="text-white/20">·</span>
-            <span>GPT Image 2</span>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-white/50">
+              <Zap className="w-3.5 h-3.5 text-violet-400" />
+              <span>Gemini</span>
+              <span className="text-white/20">·</span>
+              <span>Fal.ai</span>
+              <span className="text-white/20">·</span>
+              <span>GPT Image 2</span>
+            </div>
+            <Link
+              href="/cms"
+              className="flex items-center gap-1.5 text-xs font-medium text-white/60 hover:text-white transition-colors border border-white/10 hover:border-violet-500/40 px-3 py-1.5 rounded-lg"
+            >
+              <Library className="w-3.5 h-3.5" />
+              Gallery
+            </Link>
           </div>
         </div>
       </header>
@@ -862,7 +914,7 @@ export default function AIModelsFactory() {
               <div className="relative rounded-2xl overflow-hidden border border-violet-500/30 shadow-2xl shadow-violet-500/10 aspect-[3/4]">
                 <Image src={resultImage} alt="Result" fill className="object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-5 flex gap-3">
+                <div className="absolute bottom-0 left-0 right-0 p-5 flex gap-2">
                   <button
                     onClick={downloadResult}
                     className="flex-1 py-2.5 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-colors text-sm font-medium flex items-center justify-center gap-2"
@@ -871,11 +923,17 @@ export default function AIModelsFactory() {
                     Download
                   </button>
                   <button
+                    onClick={openPublishModal}
+                    className="flex-1 py-2.5 rounded-xl bg-violet-600/80 backdrop-blur-sm border border-violet-500/40 hover:bg-violet-500/80 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    <BookmarkPlus className="w-4 h-4" />
+                    Publish
+                  </button>
+                  <button
                     onClick={reset}
-                    className="flex-1 py-2.5 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    className="py-2.5 px-3 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-colors text-sm font-medium flex items-center justify-center"
                   >
                     <RotateCcw className="w-4 h-4" />
-                    Start Over
                   </button>
                 </div>
               </div>
@@ -1151,20 +1209,26 @@ export default function AIModelsFactory() {
               <div className="relative rounded-2xl overflow-hidden border border-fuchsia-500/30 shadow-2xl shadow-fuchsia-500/10">
                 <video src={resultVideoUrl} className="w-full rounded-2xl" controls autoPlay loop muted />
               </div>
-              <div className="flex gap-3 mt-4">
+              <div className="flex gap-2 mt-4">
                 <button
                   onClick={downloadVideo}
                   className="flex-1 py-3 rounded-xl bg-white/10 border border-white/20 hover:bg-white/20 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  Download Video
+                  Download
+                </button>
+                <button
+                  onClick={openPublishModal}
+                  className="flex-1 py-3 rounded-xl bg-violet-600/80 border border-violet-500/40 hover:bg-violet-500/80 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  <BookmarkPlus className="w-4 h-4" />
+                  Publish
                 </button>
                 <button
                   onClick={reset}
-                  className="flex-1 py-3 rounded-xl bg-fuchsia-600/80 hover:bg-fuchsia-500 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                  className="py-3 px-4 rounded-xl bg-fuchsia-600/80 hover:bg-fuchsia-500 transition-colors text-sm font-medium flex items-center justify-center"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  Start Over
                 </button>
               </div>
             </div>
@@ -1210,6 +1274,92 @@ export default function AIModelsFactory() {
           </div>
         )}
       </div>
+
+      {/* ── Publish Modal ── */}
+      {publishModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget && publishStatus !== "loading") setPublishModalOpen(false); }}
+        >
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            {publishStatus === "done" ? (
+              /* Success state */
+              <div className="text-center py-4">
+                <div className="w-14 h-14 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-7 h-7 text-violet-400" />
+                </div>
+                <h3 className="font-bold text-lg mb-1">Published!</h3>
+                <p className="text-white/40 text-sm mb-5">Your item is now in the gallery.</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setPublishModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-white/10 border border-white/10 hover:bg-white/15 transition-colors text-sm font-medium"
+                  >
+                    Close
+                  </button>
+                  <Link
+                    href="/cms"
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 transition-all text-sm font-medium text-center"
+                    onClick={() => setPublishModalOpen(false)}
+                  >
+                    View Gallery
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              /* Input state */
+              <>
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <h3 className="font-bold text-base">Publish to Gallery</h3>
+                    <p className="text-white/40 text-xs mt-0.5">Give this {step === "video-result" ? "video" : "image"} a title</p>
+                  </div>
+                  <button
+                    onClick={() => setPublishModalOpen(false)}
+                    disabled={publishStatus === "loading"}
+                    className="text-white/40 hover:text-white transition-colors disabled:opacity-40"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  value={publishTitle}
+                  onChange={(e) => setPublishTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && publishItem()}
+                  placeholder='e.g. "Fashion Editorial — Summer 2025"'
+                  autoFocus
+                  disabled={publishStatus === "loading"}
+                  className="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-sm placeholder:text-white/25 focus:outline-none focus:border-violet-500/60 transition-colors disabled:opacity-40 mb-4"
+                />
+
+                {publishStatus === "error" && (
+                  <p className="text-red-400 text-xs mb-3">Publish failed — check your BLOB_READ_WRITE_TOKEN env var.</p>
+                )}
+
+                <button
+                  onClick={publishItem}
+                  disabled={!publishTitle.trim() || publishStatus === "loading"}
+                  className="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                >
+                  {publishStatus === "loading" ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Publishing…
+                    </>
+                  ) : (
+                    <>
+                      <BookmarkPlus className="w-4 h-4" />
+                      Publish
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }
