@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-3.1-flash-image-preview",
       // @ts-expect-error responseModalities supported at runtime but not in older type definitions
       generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
       safetySettings: SAFETY_SETTINGS,
