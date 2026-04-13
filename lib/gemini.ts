@@ -74,7 +74,7 @@ export async function geminiPrompt<T = string>(
   options: PromptOptions = {}
 ): Promise<T> {
   const {
-    model: modelId = "gemini-2.0-flash",
+    model: modelId = "gemini-3.1-flash-image-preview",
     system,
     images = [],
     generation,
