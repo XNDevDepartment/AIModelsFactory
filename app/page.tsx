@@ -163,6 +163,22 @@ export default function AIModelsFactory() {
   const steps = workflow ? WORKFLOW_STEPS[workflow] : [];
   const currentStepIdx = steps.findIndex((s) => s.key === step);
 
+  // ── Image resize helper ───────────────────────────────────────
+  // Resize + JPEG-compress to keep base64 payload well under 1 MB.
+  const resizeImage = (dataUrl: string, maxPx = 1024, quality = 0.85): Promise<string> =>
+    new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = dataUrl;
+    });
+
   // ── Handlers ─────────────────────────────────────────────────
   const selectWorkflow = (w: Workflow) => {
     setWorkflow(w);
@@ -173,8 +189,9 @@ export default function AIModelsFactory() {
   const handleUserPhotoUpload = useCallback(
     (file: File) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setUserPhoto(e.target?.result as string);
+      reader.onload = async (e) => {
+        const resized = await resizeImage(e.target?.result as string);
+        setUserPhoto(resized);
         setError(null);
         if (workflow === "image-edition") {
           setStep("edit-prompt");
@@ -184,7 +201,7 @@ export default function AIModelsFactory() {
       };
       reader.readAsDataURL(file);
     },
-    [workflow]
+    [workflow] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const handleDrop = useCallback(
@@ -199,13 +216,14 @@ export default function AIModelsFactory() {
 
   const handleCustomModelUpload = useCallback((file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      setCustomModelImage(e.target?.result as string);
+    reader.onload = async (e) => {
+      const resized = await resizeImage(e.target?.result as string);
+      setCustomModelImage(resized);
       setSelectedModel(null);
       setError(null);
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Face Swap ─────────────────────────────────────────────────
   const runFaceSwap = async () => {
@@ -240,11 +258,13 @@ export default function AIModelsFactory() {
       setProgress(95);
 
       if (!falRes.ok) {
-        const err = await falRes.json();
-        throw new Error(err.error || "Face swap failed.");
+        const text = await falRes.text();
+        let msg = "Face swap failed.";
+        try { msg = (JSON.parse(text) as { error?: string }).error ?? msg; } catch { msg = text.slice(0, 120) || msg; }
+        throw new Error(msg);
       }
 
-      const falData = await falRes.json();
+      const falData = await falRes.json() as { imageUrl: string };
       setResultImage(falData.imageUrl);
 
       if (geminiRes.ok) {
