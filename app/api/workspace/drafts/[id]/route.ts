@@ -63,23 +63,40 @@ export async function POST(
     if (!conn) throw new Error("Fanvue not connected — add your API key in Settings");
 
     const client = createFanvueClient(conn.api_key);
-    const post = await client.createPost({
-      body: draft.body,
-      mediaUrls: draft.media_urls as string[],
-      price: draft.price ?? undefined,
-      scheduledAt: draft.scheduled_at ?? undefined,
-    });
+
+    let fanvuePostId: string | null = null;
+
+    if (draft.type === "mass_message") {
+      // Mass message: fetch all active subscriber IDs then broadcast
+      const { data: subs } = await db
+        .from("subscribers")
+        .select("fanvue_id")
+        .eq("status", "active");
+      const ids = (subs ?? []).map((s) => s.fanvue_id);
+      if (ids.length === 0) throw new Error("No active subscribers to message");
+      await client.sendMassMessage(ids, draft.body, false);
+    } else {
+      // Regular post / PPV / story
+      const post = await client.createPost({
+        body: draft.body,
+        mediaUrls: draft.media_urls as string[],
+        type: draft.type as "post" | "ppv" | "story" | undefined,
+        price: draft.price ?? undefined,
+        scheduledAt: draft.scheduled_at ?? undefined,
+      });
+      fanvuePostId = post.id;
+    }
 
     await db
       .from("content_drafts")
       .update({
         status: draft.scheduled_at ? "scheduled" : "published",
         published_at: draft.scheduled_at ? null : new Date().toISOString(),
-        fanvue_post_id: post.id,
+        fanvue_post_id: fanvuePostId,
       })
       .eq("id", id);
 
-    return NextResponse.json({ success: true, post_id: post.id });
+    return NextResponse.json({ success: true, post_id: fanvuePostId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Publish failed";
     return NextResponse.json({ error: msg }, { status: 500 });

@@ -89,7 +89,7 @@ export default function ChatThread({
           <img src={subscriber.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
         ) : (
           <div className="w-9 h-9 rounded-full bg-violet-500/20 flex items-center justify-center text-sm font-bold text-violet-300">
-            {subscriber?.username.charAt(0).toUpperCase() ?? "?"}
+            {subscriber?.username?.charAt(0)?.toUpperCase() ?? "?"}
           </div>
         )}
         <div>
