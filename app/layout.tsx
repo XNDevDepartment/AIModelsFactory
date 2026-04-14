@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Sidebar from "@/components/Sidebar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "AI Models Factory",
-  description: "Upload your photo and become an AI model — powered by Google Gemini and Fal.ai",
+  description: "AI-powered creator suite — Studio, CRM, Automations & Workspace",
 };
 
 export default function RootLayout({
@@ -27,7 +28,12 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex bg-slate-950 text-white">
+        <Sidebar />
+        <div className="flex-1 min-w-0 flex flex-col">
+          {children}
+        </div>
+      </body>
     </html>
   );
 }
