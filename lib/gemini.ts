@@ -5,6 +5,7 @@ import {
   type GenerationConfig,
   type Part,
 } from "@google/generative-ai";
+import { GEMINI_IMAGE_MODEL } from "./models";
 
 // ─── Safety ──────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,9 @@ const NO_SAFETY = [
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type GeminiModel =
-  | "gemini-3.1-flash-image-preview"
+  /** Gemini Nano Banana 2 / Gemini 3 Pro Image. */
+  | "gemini-3-pro-image-preview"
+  | "gemini-3-pro"
 
 export interface ImageInput {
   /** Raw base64 string or a full data-URL (data:image/...;base64,...) */
@@ -27,7 +30,7 @@ export interface ImageInput {
 }
 
 export interface PromptOptions {
-  /** Gemini model to use. Defaults to gemini-2.0-flash. */
+  /** Gemini model to use. Defaults to Gemini Nano Banana 2 (gemini-3-pro-image-preview). */
   model?: GeminiModel;
   /** System instruction prepended before the user prompt. */
   system?: string;
@@ -71,7 +74,7 @@ export async function geminiPrompt<T = string>(
   options: PromptOptions = {}
 ): Promise<T> {
   const {
-    model: modelId = "gemini-3.1-flash-image-preview",
+    model: modelId = GEMINI_IMAGE_MODEL,
     system,
     images = [],
     generation,

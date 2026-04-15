@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { GEMINI_IMAGE_MODEL } from "@/lib/models";
 
 const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.1-flash-image-preview",
+      model: GEMINI_IMAGE_MODEL,
       // @ts-expect-error responseModalities supported at runtime but not in older type definitions
       generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
       safetySettings: SAFETY_SETTINGS,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
+import { OPENAI_IMAGE_MODEL } from "@/lib/models";
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     const response = await openai.images.edit({
-      model: "gpt-image-1",
+      model: OPENAI_IMAGE_MODEL,
       image: imageInput,
       prompt,
       size: "1024x1024",
