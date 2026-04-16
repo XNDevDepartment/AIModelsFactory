@@ -14,8 +14,11 @@ import {
   type Part,
 } from "@google/generative-ai";
 import OpenAI, { toFile } from "openai";
+import { fal } from "@fal-ai/client";
 
 import {
+  FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES,
+  FAL_NANO_BANANA_PRO_EDIT_MODEL,
   GEMINI_IMAGE_MODEL,
   GEMINI_TEXT_MODEL,
   MODEL_CATALOG,
@@ -239,6 +242,69 @@ export async function runOpenAI(ctx: AdapterContext, key: ModelKey): Promise<Ada
   return { text: typeof text === "string" ? text : JSON.stringify(text) };
 }
 
+// ─── Fal adapter (Nano Banana Pro edit) ──────────────────────────────────────
+
+async function uploadToFalStorage(att: Attachment): Promise<string> {
+  if (/^https?:\/\//i.test(att.url)) return att.url;
+  const { buffer, mimeType } = await fetchAsBuffer(att.url);
+  const ext = mimeType.split("/")[1] ?? "png";
+  const file = new File([new Uint8Array(buffer)], att.name ?? `upload.${ext}`, {
+    type: mimeType,
+  });
+  return fal.storage.upload(file);
+}
+
+export async function runFal(ctx: AdapterContext, key: ModelKey): Promise<AdapterReply> {
+  if (!process.env.FAL_KEY) throw new Error("FAL_KEY is not set.");
+  fal.config({ credentials: process.env.FAL_KEY });
+
+  const { input, editTarget, history } = ctx;
+
+  if (key !== "nano-banana-pro-fal") {
+    throw new Error(`No Fal adapter configured for model: ${key}`);
+  }
+
+  // Collect reference images: explicit edit target, then this turn's uploads,
+  // then — as a last resort — the most recent images anywhere in the history,
+  // so a "prompt" turn can still carry over a thread of edits.
+  const refs: Attachment[] = [];
+  if (editTarget) refs.push(editTarget);
+  if (input.images?.length) refs.push(...input.images);
+  if (refs.length === 0) {
+    for (let i = history.length - 1; i >= 0 && refs.length === 0; i--) {
+      if (history[i].images?.length) refs.push(...history[i].images!);
+    }
+  }
+  if (refs.length === 0) {
+    throw new Error(
+      "Nano Banana Pro requires at least one reference image. Upload an image first."
+    );
+  }
+  if (refs.length > FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES) {
+    throw new Error(
+      `Nano Banana Pro accepts at most ${FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES} images per request.`
+    );
+  }
+
+  const image_urls = await Promise.all(refs.map(uploadToFalStorage));
+
+  const result = await fal.subscribe(FAL_NANO_BANANA_PRO_EDIT_MODEL, {
+    input: { prompt: input.text, image_urls },
+  });
+
+  const output = result.data as {
+    images?: { url: string; content_type?: string }[];
+    description?: string;
+  };
+  const images: Attachment[] = (output?.images ?? []).map((i) => ({
+    url: i.url,
+    mimeType: i.content_type ?? "image/png",
+  }));
+  if (!images.length) throw new Error("Nano Banana Pro returned no images.");
+
+  return { text: output.description, images };
+}
+
 // ─── Dispatcher ───────────────────────────────────────────────────────────────
 
 export async function runAdapter(key: ModelKey, ctx: AdapterContext): Promise<AdapterReply> {
@@ -249,6 +315,8 @@ export async function runAdapter(key: ModelKey, ctx: AdapterContext): Promise<Ad
       return runGemini(ctx, key);
     case "openai":
       return runOpenAI(ctx, key);
+    case "fal":
+      return runFal(ctx, key);
     default:
       throw new Error(`No adapter registered for provider: ${descriptor.provider}`);
   }

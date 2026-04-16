@@ -4,10 +4,16 @@ import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Send, Upload, Wand2, Sparkles, Bot, User as UserIcon } from "lucide-react";
 
-import { MODEL_CATALOG, type ModelKey } from "@/lib/models";
+import { FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES, MODEL_CATALOG, type ModelKey } from "@/lib/models";
 import type { Attachment, Conversation, ConversationTurn } from "@/lib/conversation";
 
 type Kind = "prompt" | "upload" | "edit";
+
+/**
+ * Hard cap shared across all models. Nano Banana Pro is the tightest-bound
+ * model we support (max 4 reference images) so we use it as the UI ceiling.
+ */
+const MAX_ATTACHMENTS = FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES;
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -38,13 +44,27 @@ export default function ConversationSimulatorPage() {
   async function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
+    const slots = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+    if (slots === 0) {
+      setError(`You can attach at most ${MAX_ATTACHMENTS} images per message.`);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    const accepted = files.slice(0, slots);
     const next: Attachment[] = [];
-    for (const f of files) {
+    for (const f of accepted) {
       const url = await fileToDataUrl(f);
       next.push({ url, mimeType: f.type || "image/png", name: f.name });
     }
     setAttachments((prev) => [...prev, ...next]);
     setKind("upload");
+    if (files.length > slots) {
+      setError(
+        `Only the first ${slots} image${slots === 1 ? "" : "s"} were kept — the limit is ${MAX_ATTACHMENTS}.`
+      );
+    } else {
+      setError(null);
+    }
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -152,7 +172,10 @@ export default function ConversationSimulatorPage() {
         )}
 
         {attachments.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <span className="shrink-0 text-xs text-neutral-500">
+              {attachments.length}/{MAX_ATTACHMENTS}
+            </span>
             {attachments.map((a, i) => (
               <div key={i} className="relative h-20 w-20 overflow-hidden rounded-md border border-neutral-800">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -192,8 +215,9 @@ export default function ConversationSimulatorPage() {
             />
             <button
               onClick={() => fileRef.current?.click()}
-              className="rounded-lg border border-neutral-700 p-2 hover:bg-neutral-800"
-              title="Upload image(s)"
+              disabled={attachments.length >= MAX_ATTACHMENTS}
+              className="rounded-lg border border-neutral-700 p-2 hover:bg-neutral-800 disabled:opacity-40"
+              title={`Upload image(s) — up to ${MAX_ATTACHMENTS}`}
             >
               <Upload className="h-4 w-4" />
             </button>

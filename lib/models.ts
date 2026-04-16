@@ -43,6 +43,17 @@ export const FAL_FACE_SWAP_MODEL = "fal-ai/face-swap" as const;
 export const FAL_MOTION_CONTROL_MODEL =
   "fal-ai/kling-video/v2.6/pro/motion-control" as const;
 
+/**
+ * Fal-hosted Google Nano Banana Pro (edit). Accepts 1–4 input image URLs
+ * plus a prompt and returns edited image(s).
+ *
+ * Docs: https://fal.ai/models/fal-ai/nano-banana-pro/edit/api
+ */
+export const FAL_NANO_BANANA_PRO_EDIT_MODEL = "fal-ai/nano-banana-pro/edit" as const;
+
+/** Maximum reference images accepted by Nano Banana Pro edit. */
+export const FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES = 4;
+
 // ─── Catalog (consumed by the conversation simulator) ────────────────────────
 
 export type ModelCapability = "text" | "image-gen" | "image-edit" | "vision";
@@ -82,6 +93,13 @@ export const MODEL_CATALOG: Record<string, ModelDescriptor> = {
     label: "GPT-5.1",
     provider: "openai",
     capabilities: ["text", "vision"],
+  },
+  "nano-banana-pro-fal": {
+    id: FAL_NANO_BANANA_PRO_EDIT_MODEL,
+    label: "Nano Banana Pro (fal.ai, edit)",
+    provider: "fal",
+    capabilities: ["image-gen", "image-edit"],
+    aliases: ["fal-nano-banana-pro-edit"],
   },
 };
 
