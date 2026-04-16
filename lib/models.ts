@@ -54,6 +54,14 @@ export const FAL_NANO_BANANA_PRO_EDIT_MODEL = "fal-ai/nano-banana-pro/edit" as c
 /** Maximum reference images accepted by Nano Banana Pro edit. */
 export const FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES = 4;
 
+/**
+ * Default `safety_tolerance` applied to every fal.ai request.
+ * 6 is the most permissive setting on the 1–6 scale — only truly disallowed
+ * content is blocked. Callers can override per-request if they need stricter
+ * moderation.
+ */
+export const DEFAULT_SAFETY_TOLERANCE = 6;
+
 // ─── Catalog (consumed by the conversation simulator) ────────────────────────
 
 export type ModelCapability = "text" | "image-gen" | "image-edit" | "vision";

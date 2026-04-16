@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fal } from "@fal-ai/client";
+import { DEFAULT_SAFETY_TOLERANCE } from "@/lib/models";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest) {
       input: {
         base_image_url: targetImage, // The model/target body image
         swap_image_url: sourceImage, // The user's face to swap in
+        safety_tolerance: DEFAULT_SAFETY_TOLERANCE,
       },
     });
 

@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fal } from "@fal-ai/client";
 
 import {
+  DEFAULT_SAFETY_TOLERANCE,
   FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES,
   FAL_NANO_BANANA_PRO_EDIT_MODEL,
 } from "@/lib/models";
@@ -41,6 +42,8 @@ interface Body {
   aspect_ratio?: AspectRatio;
   output_format?: OutputFormat;
   resolution?: Resolution;
+  /** 1 (strictest) – 6 (most permissive). Defaults to DEFAULT_SAFETY_TOLERANCE. */
+  safety_tolerance?: number;
 }
 
 async function ensurePublicUrl(urlOrDataUrl: string): Promise<string> {
@@ -88,6 +91,7 @@ export async function POST(req: NextRequest) {
       input: {
         prompt: body.prompt,
         image_urls,
+        safety_tolerance: body.safety_tolerance ?? DEFAULT_SAFETY_TOLERANCE,
         ...(body.num_images != null ? { num_images: body.num_images } : {}),
         ...(body.aspect_ratio ? { aspect_ratio: body.aspect_ratio } : {}),
         ...(body.output_format ? { output_format: body.output_format } : {}),

@@ -17,6 +17,7 @@ import OpenAI, { toFile } from "openai";
 import { fal } from "@fal-ai/client";
 
 import {
+  DEFAULT_SAFETY_TOLERANCE,
   FAL_NANO_BANANA_PRO_EDIT_MAX_IMAGES,
   FAL_NANO_BANANA_PRO_EDIT_MODEL,
   GEMINI_IMAGE_MODEL,
@@ -289,7 +290,11 @@ export async function runFal(ctx: AdapterContext, key: ModelKey): Promise<Adapte
   const image_urls = await Promise.all(refs.map(uploadToFalStorage));
 
   const result = await fal.subscribe(FAL_NANO_BANANA_PRO_EDIT_MODEL, {
-    input: { prompt: input.text, image_urls },
+    input: {
+      prompt: input.text,
+      image_urls,
+      safety_tolerance: DEFAULT_SAFETY_TOLERANCE,
+    },
   });
 
   const output = result.data as {

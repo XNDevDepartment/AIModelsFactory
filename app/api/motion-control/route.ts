@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fal } from "@fal-ai/client";
+import { DEFAULT_SAFETY_TOLERANCE } from "@/lib/models";
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
         image_url: imageUrl,
         video_url: videoUrl,
         character_orientation: "video",
+        safety_tolerance: DEFAULT_SAFETY_TOLERANCE,
         ...(prompt ? { prompt } : {}),
       },
     });
