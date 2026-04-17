@@ -4,16 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Sparkles, Users, MessageSquare, Zap, LayoutGrid,
-  Image as ImageIcon, Settings, Library, ChevronRight,
+  Image as ImageIcon, Settings, Library, ChevronRight, Film, Bot,
 } from "lucide-react";
 
 const NAV = [
   {
     group: "Create",
     items: [
-      { href: "/",          label: "Studio",     icon: Sparkles,      badge: null },
-      { href: "/workspace", label: "Workspace",  icon: LayoutGrid,    badge: null },
-      { href: "/cms",       label: "Gallery",    icon: ImageIcon,     badge: null },
+      { href: "/",                label: "Studio",          icon: Sparkles,   badge: null },
+      { href: "/workspace",       label: "Workspace",       icon: LayoutGrid, badge: null },
+      { href: "/cms",             label: "Gallery",         icon: ImageIcon,  badge: null },
+      { href: "/motion-control",  label: "Motion Control",  icon: Film,       badge: null },
+      { href: "/conversation",    label: "AI Chat",         icon: Bot,        badge: null },
     ],
   },
   {
@@ -93,7 +95,7 @@ export default function Sidebar() {
       <div className="px-5 py-4 border-t border-white/8">
         <div className="flex items-center gap-2 text-xs text-white/25">
           <Library className="w-3.5 h-3.5" />
-          <span>Powered by Gemini + Fal.ai</span>
+          <span>Nano Banana 2 · OpenAI Image 2 · Fal.ai</span>
         </div>
       </div>
     </aside>

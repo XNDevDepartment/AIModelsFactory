@@ -107,7 +107,7 @@ const WORKFLOWS: Array<{
   {
     id: "image-edition",
     title: "Image Edition",
-    subtitle: "Gemini 2.0 Flash",
+    subtitle: "Gemini Nano Banana 2",
     description: "Upload your photo and describe how you want it edited — change outfits, backgrounds, lighting, style, and more with a simple text prompt.",
     icon: Wand2,
     gradient: "from-cyan-600 to-blue-600",
@@ -520,7 +520,7 @@ export default function AIModelsFactory() {
 
   const processingSubtitle =
     workflow === "image-edition"
-      ? "Gemini 2.0 Flash is applying your edits"
+      ? "Gemini Nano Banana 2 is applying your edits"
       : workflow === "person-swap"
       ? "GPT Image 2 is transforming your appearance"
       : "Fal.ai is swapping faces · Gemini is analyzing your shot";
@@ -548,7 +548,7 @@ export default function AIModelsFactory() {
                 {workflow === "face-swap"
                   ? "Fal.ai + Gemini"
                   : workflow === "image-edition"
-                  ? "Gemini 2.0 Flash"
+                  ? "Gemini Nano Banana 2"
                   : workflow === "person-swap"
                   ? "GPT Image 2"
                   : "3 AI Workflows"}
@@ -1025,7 +1025,7 @@ export default function AIModelsFactory() {
                       <li className="flex justify-between">
                         <span>Model</span>
                         <span className="text-white/70">
-                          {workflow === "image-edition" ? "Gemini 2.0 Flash" : "GPT Image 2"}
+                          {workflow === "image-edition" ? "Gemini Nano Banana 2" : "GPT Image 2"}
                         </span>
                       </li>
                       {workflow === "image-edition" && editPrompt && (
@@ -1281,7 +1281,7 @@ export default function AIModelsFactory() {
                   <li className="flex justify-between"><span>Model</span><span className="text-white/70">Kling v2.6 Pro</span></li>
                   <li className="flex justify-between"><span>Orientation</span><span className="text-white/70">video</span></li>
                   <li className="flex justify-between"><span>Face swap</span><span className="text-white/70">Fal.ai</span></li>
-                  <li className="flex justify-between"><span>Analysis</span><span className="text-white/70">Gemini 2.0 Flash</span></li>
+                  <li className="flex justify-between"><span>Analysis</span><span className="text-white/70">Gemini Nano Banana 2</span></li>
                   {motionPrompt && (
                     <li className="pt-2 border-t border-white/10">
                       <span className="block text-white/30 mb-1">Prompt</span>
