@@ -24,6 +24,21 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+function resizeImage(dataUrl: string, maxPx = 1024, quality = 0.85): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 export default function ConversationSimulatorPage() {
   const [model, setModel] = useState<ModelKey>("gemini-nano-banana-2");
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -53,8 +68,9 @@ export default function ConversationSimulatorPage() {
     const accepted = files.slice(0, slots);
     const next: Attachment[] = [];
     for (const f of accepted) {
-      const url = await fileToDataUrl(f);
-      next.push({ url, mimeType: f.type || "image/png", name: f.name });
+      const raw = await fileToDataUrl(f);
+      const url = await resizeImage(raw);
+      next.push({ url, mimeType: "image/jpeg", name: f.name });
     }
     setAttachments((prev) => [...prev, ...next]);
     setKind("upload");
@@ -78,11 +94,31 @@ export default function ConversationSimulatorPage() {
         : attachments.length > 0 && kind === "prompt" ? "upload"
         : kind;
 
+      // Strip base64 image data from older turns to keep the JSON payload
+      // well under Vercel's ~4.5 MB limit. We preserve images only on the
+      // two most recent image-bearing turns so the server can still resolve
+      // edit targets and provide recent visual context.
+      let slimConversation = conversation;
+      if (conversation) {
+        const MAX_IMAGE_TURNS = 2;
+        let imageCount = 0;
+        const slimTurns = [...conversation.turns].reverse().map((t) => {
+          if (t.images?.length) {
+            imageCount++;
+            if (imageCount > MAX_IMAGE_TURNS) {
+              return { ...t, images: undefined };
+            }
+          }
+          return t;
+        }).reverse();
+        slimConversation = { ...conversation, turns: slimTurns };
+      }
+
       const res = await fetch("/api/conversation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          conversation,
+          conversation: slimConversation,
           init: conversation ? undefined : { model },
           input: {
             kind: effectiveKind,
