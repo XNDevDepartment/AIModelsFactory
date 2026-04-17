@@ -26,11 +26,15 @@ export const GEMINI_TEXT_MODEL = "gemini-3-pro" as const;
 // ─── OpenAI ──────────────────────────────────────────────────────────────────
 
 /**
- * "OpenAI Image 2" — the second-generation native image model from OpenAI
- * (successor to `gpt-image-1`). Used via `openai.images.generate` and
- * `openai.images.edit`. Supports multi-image references and inpainting masks.
+ * OpenAI's native image model (`gpt-image-1`). Used via `openai.images.generate`
+ * and `openai.images.edit`. Supports multi-image references and inpainting masks.
+ *
+ * Note: `gpt-image-2` was never released publicly — early branding materials
+ * used that name but the shipping model ID remains `gpt-image-1`. Keep this
+ * constant pointed at the real ID; the user-facing label "OpenAI Image 2" is
+ * kept in MODEL_CATALOG.
  */
-export const OPENAI_IMAGE_MODEL = "gpt-image-2" as const;
+export const OPENAI_IMAGE_MODEL = "gpt-image-1" as const;
 
 /**
  * Latest GPT text model for chat / reasoning. Supports vision input.
@@ -94,7 +98,7 @@ export const MODEL_CATALOG: Record<string, ModelDescriptor> = {
     label: "OpenAI Image 2",
     provider: "openai",
     capabilities: ["image-gen", "image-edit"],
-    aliases: ["gpt-image-2"],
+    aliases: ["gpt-image-1"],
   },
   "gpt-5.1": {
     id: OPENAI_TEXT_MODEL,

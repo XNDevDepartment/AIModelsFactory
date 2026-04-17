@@ -136,6 +136,12 @@ export async function runGemini(ctx: AdapterContext, key: ModelKey): Promise<Ada
 
   const responseParts = result.response.candidates?.[0]?.content?.parts ?? [];
   const reply: AdapterReply = { images: [] };
+  // Upload generated image bytes to fal.storage so the conversation history
+  // carries short https URLs instead of multi-MB base64 data URLs. Without
+  // this, each edit turn re-sends all prior base64 images and blows past the
+  // Vercel serverless 4.5 MB request cap (seen as HTTP 513 on /api/conversation).
+  const canPersist = Boolean(process.env.FAL_KEY);
+  if (canPersist) fal.config({ credentials: process.env.FAL_KEY });
   for (const p of responseParts) {
     if ("text" in p && typeof p.text === "string" && p.text.trim()) {
       reply.text = (reply.text ? reply.text + "\n" : "") + p.text.trim();
@@ -145,10 +151,17 @@ export async function runGemini(ctx: AdapterContext, key: ModelKey): Promise<Ada
       p.inlineData?.data &&
       p.inlineData.mimeType?.startsWith("image/")
     ) {
-      reply.images!.push({
-        url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`,
-        mimeType: p.inlineData.mimeType,
-      });
+      const mimeType = p.inlineData.mimeType;
+      const dataUrl = `data:${mimeType};base64,${p.inlineData.data}`;
+      let url = dataUrl;
+      if (canPersist) {
+        try {
+          url = await uploadToFalStorage({ url: dataUrl, mimeType });
+        } catch (err) {
+          console.warn("fal.storage upload failed, falling back to data URL:", err);
+        }
+      }
+      reply.images!.push({ url, mimeType });
     }
   }
   if (!reply.images?.length) delete reply.images;
