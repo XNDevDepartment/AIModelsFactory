@@ -87,9 +87,8 @@ export async function POST(req: NextRequest) {
     // Upload any data URLs to fal.storage so we always hand the model public URLs.
     const image_urls = await Promise.all(body.images.map(ensurePublicUrl));
 
-    const result = await fal.subscribe(FAL_NANO_BANANA_PRO_EDIT_MODEL, {
-      // Cast to Record so we can pass safety_tolerance, which the fal SDK types
-      // don't include in NanoBananaProEditInput but is accepted at the API level.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (fal as any).subscribe(FAL_NANO_BANANA_PRO_EDIT_MODEL, {
       input: {
         prompt: body.prompt,
         image_urls,
@@ -98,7 +97,7 @@ export async function POST(req: NextRequest) {
         ...(body.aspect_ratio ? { aspect_ratio: body.aspect_ratio } : {}),
         ...(body.output_format ? { output_format: body.output_format } : {}),
         ...(body.resolution ? { resolution: body.resolution } : {}),
-      } as Record<string, unknown>,
+      },
     });
 
     const output = result.data as {

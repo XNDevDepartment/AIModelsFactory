@@ -289,7 +289,8 @@ export async function runFal(ctx: AdapterContext, key: ModelKey): Promise<Adapte
 
   const image_urls = await Promise.all(refs.map(uploadToFalStorage));
 
-  const result = await fal.subscribe(FAL_NANO_BANANA_PRO_EDIT_MODEL, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (fal as any).subscribe(FAL_NANO_BANANA_PRO_EDIT_MODEL, {
     input: {
       prompt: input.text,
       image_urls,

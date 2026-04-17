@@ -16,10 +16,11 @@ export async function POST(req: NextRequest) {
     fal.config({ credentials: process.env.FAL_KEY });
 
     // Use fal.ai face swap model
-    const result = await fal.subscribe("fal-ai/face-swap", {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (fal as any).subscribe("fal-ai/face-swap", {
       input: {
-        base_image_url: targetImage, // The model/target body image
-        swap_image_url: sourceImage, // The user's face to swap in
+        base_image_url: targetImage,
+        swap_image_url: sourceImage,
         safety_tolerance: DEFAULT_SAFETY_TOLERANCE,
       },
     });

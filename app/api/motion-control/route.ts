@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
     const videoUrl = await fal.storage.upload(videoFile);
 
     // Call Kling v2.6 Pro motion control
-    const result = await fal.subscribe("fal-ai/kling-video/v2.6/pro/motion-control", {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (fal as any).subscribe("fal-ai/kling-video/v2.6/pro/motion-control", {
       input: {
         image_url: imageUrl,
         video_url: videoUrl,
